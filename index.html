@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>webcamera.chat</title>
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.webrtc.ecl.ntt.com/skyway-4.4.5.js"></script>
+  <!-- Include the following line to use Tailwind CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-gray-100">
+  <div class="container mx-auto py-10">
+    <div class="grid grid-cols-2 gap-6">
+      <div class="col-span-1">
+        <div class="bg-white p-4 rounded shadow">
+          <video id="my-video" class="w-full rounded" autoplay muted playsinline></video>
+          <p id="my-id" class="mt-2 font-semibold"></p>
+          <input id="their-id" class="w-full p-2 mt-2 border rounded" placeholder="相手のID">
+          <button id="make-call"
+            class="block w-full mt-4 bg-blue-500 text-white rounded p-2 hover:bg-blue-600">発信</button>
+          <button id="share-screen"
+            class="block w-full mt-2 bg-green-500 text-white rounded p-2 hover:bg-green-600">画面共有</button>
+          <button id="stop-screen"
+            class="block w-full mt-2 bg-red-500 text-white rounded p-2 hover:bg-red-600">共有停止</button>
+        </div>
+      </div>
+      <div class="col-span-1">
+        <div class="bg-white p-4 rounded shadow">
+          <video id="their-video" class="w-full rounded" autoplay muted playsinline></video>
+          <ul id="output" class="mt-4 space-y-2"></ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-10">
+      <form class="bg-white p-4 rounded shadow">
+        <fieldset>
+          <legend class="text-lg font-semibold">コメント入力</legend>
+          <div class="mt-2">
+            <label for="name" class="block text-sm">名前:</label>
+            <input type="text" id="name" class="w-full p-2 border rounded">
+          </div>
+          <div class="mt-2">
+            <label for="text" class="block text-sm">コメント:</label>
+            <input type="text" id="text" class="w-full p-2 border rounded">
+          </div>
+          <div class="mt-4">
+            <button type="button" id="send" class="bg-blue-500 text-white rounded p-2 hover:bg-blue-600">Send</button>
+          </div>
+        </fieldset>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const peer = new Peer({
+      key: '',
+      debug: 3
+    });
+
+    peer.on('open', () => {
+      document.getElementById('my-id').textContent = `Your ID: ${peer.id}`;
+    });
+
+    let localStream;
+    let screenStream;
+
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        const videoElm = document.getElementById('my-video');
+        videoElm.srcObject = stream;
+        videoElm.play();
+        localStream = stream;
+      }).catch(error => {
+        console.error('mediaDevice.getUserMedia() error:', error);
+        return;
+      });
+
+    document.getElementById('make-call').onclick = () => {
+      const theirID = document.getElementById('their-id').value;
+      const mediaConnection = peer.call(theirID, localStream);
+      setEventListener(mediaConnection);
+    };
+
+    document.getElementById('share-screen').onclick = async () => {
+      try {
+        screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        const videoElm = document.getElementById('my-video');
+        videoElm.srcObject = screenStream;
+        videoElm.play();
+      } catch (error) {
+        console.error('getDisplayMedia() error:', error);
+      }
+    };
+
+    document.getElementById('stop-screen').onclick = () => {
+      if (screenStream) {
+        const tracks = screenStream.getTracks();
+        tracks.forEach(track => track.stop());
+        const videoElm = document.getElementById('my-video');
+        videoElm.srcObject = localStream;
+        videoElm.play();
+      }
+    };
+
+    const setEventListener = mediaConnection => {
+      mediaConnection.on('stream', stream => {
+        const videoElm = document.getElementById('their-video');
+        videoElm.srcObject = stream;
+        videoElm.play();
+      });
+    }
+
+    peer.on('call', mediaConnection => {
+      mediaConnection.answer(localStream);
+      setEventListener(mediaConnection);
+    });
+
+    peer.on('error', err => {
+      alert(err.message);
+    });
+
+    peer.on('close', () => {
+      alert('通信が切断しました。');
+    });
+
+    // 以下、チャットの処理（Firebase部分は変更なし）
+    function convertTimestampToDatetime(timestamp) {
+      const _d = timestamp ? new Date(timestamp * 1000) : new Date();
+      const Y = _d.getFullYear();
+      const m = (_d.getMonth() + 1).toString().padStart(2, '0');
+      const d = _d.getDate().toString().padStart(2, '0');
+      const H = _d.getHours().toString().padStart(2, '0');
+      const i = _d.getMinutes().toString().padStart(2, '0');
+      const s = _d.getSeconds().toString().padStart(2, '0');
+      return `${Y}/${m}/${d} ${H}:${i}:${s}`;
+    }
+  </script>
+
+  <script type="module">
+    // Firebaseの設定（変更なし）
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.2.0/firebase-app.js";
+
+    import {
+      getFirestore,
+      collection,
+      addDoc,
+      serverTimestamp,
+      query,
+      orderBy,
+      onSnapshot,
+    } from "https://www.gstatic.com/firebasejs/10.2.0/firebase-firestore.js";
+
+    // TODO: Add SDKs for Firebase products that you want to use
+    // https://firebase.google.com/docs/web/setup#available-libraries
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "",
+      authDomain: "dada-4fa93.firebaseapp.com",
+      projectId: "dada-4fa93",
+      storageBucket: "dada-4fa93.appspot.com",
+      messagingSenderId: "987326974457",
+      appId: "1:987326974457:web:24b097269ca1e96f03d528"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    //送信ボタンクリック時にデータを送信
+    $("#send").on("click", function () {
+      // 送信時に必要な処理
+      //入力値を取得する処理
+      const postData = {
+        name: $("#name").val(),
+        text: $("#text").val(),
+        time: serverTimestamp(),
+      };
+      //データを送信する処理
+      //addDocについて11.30参照（Firebase入門：https://zenn.dev/nash/articles/6e18bd94eca63e)
+      // ランダムなIDが付与されたドキュメントの作成：addDoc
+      addDoc(collection(db, "webcamera"), postData);
+      $("#text").val("");
+    });
+
+
+    //データ取得条件の指定（今回は時間の新しい順に並び替えて取得）
+    const q = query(collection(db, "webcamera"), orderBy("time", "desc"));
+
+    onSnapshot(q, (querySnapshot) => {
+
+
+      //データ取得処理 
+      // onSnapshot(collection(db, "chat"), (querySnapshot) => {
+      //     console.log(querySnapshot.docs);
+
+      // データの取り出し(forEach:配列のループ処理
+      // (コールバック関数に実行したい内容を記述することで、配列の要素ひとつひとつに対して繰り返し処理を実行します forEach(function(value){})
+      // 参照11.30https://and-engineer.com/articles/YhM_2BMAAKtubeB- )
+
+      const documents = [];  //空の配列を準備する
+      querySnapshot.docs.forEach(function (doc) {
+        //querySnapshot.docs に対して繰り返し処理を用いて各要素に対して，.id でドキュメント ID（名前）を取得する．.data() でドキュメント中身（3 項目）を取得する．
+        const document = {
+          id: doc.id,
+          data: doc.data(),
+        };
+
+        //上のdocumentに追加する
+        documents.push(document);
+      });
+
+      console.log(documents);
+
+      // 画面表示するためのタグ生成
+      //空の配列を準備する
+      const htmlElements = [];
+      //documentsに繰り返しを用い各要素をタグの形にする。
+      documents.forEach(function (document) {
+        htmlElements.push(`
+            <li id="${document.id}">
+              <p>${document.data.name} at ${convertTimestampToDatetime(document.data.time.seconds)}</p>
+              <p>${document.data.text}</p>
+            </li>
+            `);
+      });
+
+      $("#output").html(htmlElements);
+    });
+
+
+  </script>
+  </script>
+
+</body>
+
+</html>
